@@ -25,7 +25,7 @@ import rospkg
 from sensor_msgs.msg import Image   
 from cv_bridge import CvBridge
 from visualization_msgs.msg import Marker,MarkerArray
-from yolov7.msg import BoundBox, BoundBoxArray
+from yolov7.msg import BoundingBox, BoundingBoxArray
 
 import numpy as np
 import math
@@ -40,8 +40,40 @@ default_iou_thres = 0.45
 default_agnostic_nms = False
 xy = None
 
+def MakeMarker(type, id, msg, marker_array, name):
+    global xy, xyz, wh, confident, classes, x, y, z
+
+    marker = Marker()     
+    marker.id = id
+    marker.ns = name
+    marker.header.frame_id = "camera"
+    marker.header.stamp = msg.header.stamp
+    marker.pose.position.x = x
+    marker.pose.position.y = y
+    marker.pose.position.z = z
+    marker.pose.orientation.w = 1.0
+    marker.scale.x = 0.1
+    marker.scale.y = 0.1
+    marker.scale.z = 0.1
+    marker.color.a = 1.0
+    marker.color.r = 0.0
+    marker.color.g = 1.0
+    marker.color.b = 0.0
+    marker.type = type
+    if type == Marker.TEXT_VIEW_FACING:
+        marker.text = f'{names[int(classes[id])]}'
+        marker.pose.position.x = x
+        marker.pose.position.y = y-0.1
+        marker.pose.position.z = z
+
+
+    marker_array.markers.append(marker)
+    
+
+
+
 def callback(msg):
-    global xy, xyz
+    global xy, xyz, wh, confident, classes, x, y, z
     img = bridge.imgmsg_to_cv2(msg, "bgr8")
     im0 = img.copy()
     # cv2.imshow("Image window", img)
@@ -102,7 +134,12 @@ def callback(msg):
         objects = pred[0].cpu().numpy()
         
         # print(objects)
+        wh = (objects[:,2:4]-objects[:,:2]).astype(int)
         xy = ((objects[:,:2]+objects[:,2:4])/2).astype(int)
+        confident = objects[:,4]
+        classes = objects[:,5]
+
+        
         # print(xy)
 
 
@@ -110,43 +147,53 @@ def callback(msg):
         cv2.waitKey(1)  # 1 millisecond
 
 def callback2(msg):
-    global xy, xyz
+    global xy, xyz, wh, confident, classes, x, y, z
     img = bridge.imgmsg_to_cv2(msg, "32FC1")
     if xy is not None:
         
-        depth = img[xy[:,1],xy[:,0]]
+        depth = img[xy[:,1],xy[:,0]] #opencv dimension 2 = x
         depth = depth[:, np.newaxis] 
         xyz = np.concatenate((xy,depth),1)
 
         
         marker_array = MarkerArray()
+        bounding_box_array = BoundingBoxArray()
 
+        # add a fake marker to let rviz delete the previous markers
         fake_marker = Marker()
         fake_marker.action = Marker.DELETEALL
         marker_array.markers.append(fake_marker)
 
+
+
         for id, position in enumerate(xyz):
-            object_xyz = Marker()   
-            object_xyz.id = id
-            object_xyz.header.frame_id = "camera"
-            object_xyz.header.stamp = msg.header.stamp
-            theta_yz = 3.1415926/2-math.atan((xyz[id,0]-320)/320)
-            theta_xz = 3.1415926/2-math.atan((xyz[id,1]-320)/320)
-            object_xyz.pose.position.x = xyz[id,2]/math.tan(theta_yz)
-            object_xyz.pose.position.y = xyz[id,2]/math.tan(theta_xz)
-            object_xyz.pose.position.z = xyz[id,2]
-            object_xyz.pose.orientation.w = 1.0
-            object_xyz.scale.x = 0.1
-            object_xyz.scale.y = 0.1
-            object_xyz.scale.z = 0.1
-            object_xyz.color.a = 1.0
-            object_xyz.color.r = 0.0
-            object_xyz.color.g = 1.0
-            object_xyz.color.b = 0.0
-            object_xyz.type = Marker.SPHERE
-            marker_array.markers.append(object_xyz)
+            
+            x = xyz[id,2]*(xyz[id,0]-320)/320
+            y = xyz[id,2]*(xyz[id,1]-320)/320
+            z = xyz[id,2]
+            w = xyz[id,2]*(wh[id,1])/320
+            h = xyz[id,2]*(wh[id,0])/320
+
+            # Markers Publish
+            MakeMarker(Marker.SPHERE, id, msg, marker_array, "SPHERE")
+            MakeMarker(Marker.TEXT_VIEW_FACING, id, msg, marker_array, "TEXT")
+
+
+            #Bounding Box Publish
+            bounding_box = BoundingBox()
+            bounding_box.x = x
+            bounding_box.y = y
+            bounding_box.z = z
+            bounding_box.w = w
+            bounding_box.h = h
+            bounding_box.confident = confident[id]
+            bounding_box.classes = f'{names[int(classes[id])]}'
+            bounding_box_array.boundingboxes.append(bounding_box)
+
+
         
         object_xyz_pub.publish(marker_array)
+        bounding_box_pub.publish(bounding_box_array)
         # print(xyz)
         
 
@@ -185,5 +232,6 @@ if __name__ == '__main__':
     rospy.Subscriber("image", Image, callback=callback)
     rospy.Subscriber("depth", Image, callback=callback2)
     object_xyz_pub = rospy.Publisher("object_position", MarkerArray, queue_size=1)
+    bounding_box_pub = rospy.Publisher("bounding_box", BoundingBoxArray, queue_size=1)
 
     rospy.spin()
