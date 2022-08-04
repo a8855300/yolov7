@@ -32,7 +32,7 @@ import math
 
 bridge = CvBridge()
 default_devices = ""
-default_weight = "/home/ariel/catkin_ws/src/yolov7/src/yolov7-e6e.pt"
+default_weight = "/home/ariel/catkin_ws/src/yolov7/src/weight/yolov7-e6e.pt"
 default_img_size = 640
 default_augment = False
 default_conf_thres = 0.25
