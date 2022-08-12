@@ -115,7 +115,8 @@ def callback(msg):
         t2 = time_synchronized()
 
         # Apply NMS
-        pred = non_max_suppression(pred, conf_thres, iou_thres, agnostic=agnostic_nms)
+        list_classes = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 17, 19, 20, 21, 22, 23, 24, 26, 27, 28, 29, 31, 32, 33, 35, 36, 38, 39, 40, 41, 42, 43, 45, 46, 47, 49, 50, 51, 52, 53, 54, 55, 57, 58, 59, 60, 61, 62, 64, 65, 66, 67, 68, 69, 70, 71, 75, 76, 77, 78]
+        pred = non_max_suppression(pred, conf_thres, iou_thres, classes = list_classes, agnostic=agnostic_nms)
         t3 = time_synchronized()
 
 
@@ -216,8 +217,7 @@ def callback2(msg):
         bounding_box_pub.publish(bounding_box_array)
         fake_image_pub.publish(fake_img_msg)
 
-        # with open(r'/home/ariel/catkin_ws/src/yolov7/config/class_colors.yaml', 'w') as file:
-            # documents = yaml.dump(class_colors, file)
+        
         # print(class_colors)
 
         
