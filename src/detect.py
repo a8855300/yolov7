@@ -29,6 +29,7 @@ from yolov7.msg import BoundingBox, BoundingBoxArray
 
 import numpy as np
 import math
+import yaml
 
 bridge = CvBridge()
 default_devices = ""
@@ -73,7 +74,8 @@ def MakeMarker(type, id, msg, marker_array, name):
 
 
 def callback(msg):
-    global xy, xyz, wh, confident, classes, x, y, z
+    global xy, xyz, wh, confident, classes, x, y, z, im0, cls
+    
     img = bridge.imgmsg_to_cv2(msg, "bgr8")
     im0 = img.copy()
     # cv2.imshow("Image window", img)
@@ -141,14 +143,20 @@ def callback(msg):
 
         
         # print(xy)
-
-
         cv2.imshow("yolov7", im0)
         cv2.waitKey(1)  # 1 millisecond
 
+        
+
 def callback2(msg):
-    global xy, xyz, wh, confident, classes, x, y, z
+    global xy, xyz, wh, confident, classes, x, y, z, fake_img, im0, cls
+
+    
+
     img = bridge.imgmsg_to_cv2(msg, "32FC1")
+    fake_img = np.zeros((640, 640, 3), dtype=np.uint8)
+    
+
     if xy is not None:
         
         depth = img[xy[:,1],xy[:,0]] #opencv dimension 2 = x
@@ -164,7 +172,7 @@ def callback2(msg):
         fake_marker.action = Marker.DELETEALL
         marker_array.markers.append(fake_marker)
 
-
+        # print(img)
 
         for id, position in enumerate(xyz):
             
@@ -188,13 +196,31 @@ def callback2(msg):
             bounding_box.h = h
             bounding_box.confident = confident[id]
             bounding_box.classes = f'{names[int(classes[id])]}'
-            bounding_box_array.boundingboxes.append(bounding_box)
+            bounding_box_array.boundingboxes.append(bounding_box) 
+            color = colors[int(classes[id])]
+            # print(color)
+            # class_colors[f'{names[int(classes[id])]}'] = color
+            # fake_img[int(xyz[id,1]-wh[id,1]/2):int(xyz[id,1]+wh[id,1]/2), int(xyz[id,0]-wh[id,0]/2):int(xyz[id,0]+wh[id,0]/2)] = 1
+            cv2.rectangle(fake_img,
+             (int(xyz[id,0]-wh[id,0]/2), int(xyz[id,1]-wh[id,1]/2)),
+                (int(xyz[id,0]+wh[id,0]/2), int(xyz[id,1]+wh[id,1]/2)), color,-1)
 
-
+        # cv2.imshow("fake_img", fake_img)
+        # cv2.waitKey(1)  # 1 millisecond
+       
+        fake_img_msg = bridge.cv2_to_imgmsg(fake_img, encoding="bgr8")
+        fake_img_msg.header = msg.header
+        
         
         object_xyz_pub.publish(marker_array)
         bounding_box_pub.publish(bounding_box_array)
-        # print(xyz)
+        fake_image_pub.publish(fake_img_msg)
+
+        # with open(r'/home/ariel/catkin_ws/src/yolov7/config/class_colors.yaml', 'w') as file:
+            # documents = yaml.dump(class_colors, file)
+        # print(class_colors)
+
+        
         
 
 if __name__ == '__main__':
@@ -225,13 +251,20 @@ if __name__ == '__main__':
 
     # Get names and colors
     names = model.module.names if hasattr(model, 'module') else model.names
-    colors = [[random.randint(0, 255) for _ in range(3)] for _ in names]
+    # colors = [[random.randint(0, 255) for _ in range(3)] for _ in names]
+    with open("/home/ariel/catkin_ws/src/yolov7/config/class_colors.yaml", 'r') as stream:
+        dict_class_colors = yaml.safe_load(stream)
+    colors = [dict_class_colors[name] for name in names]
 
+
+    # for num,i in enumerate(names):    
+    #     class_colors[f'{i}'] = colors[num]
 
     rospy.init_node('yolov7', anonymous=True)
     rospy.Subscriber("image", Image, callback=callback)
     rospy.Subscriber("depth", Image, callback=callback2)
     object_xyz_pub = rospy.Publisher("object_position", MarkerArray, queue_size=1)
     bounding_box_pub = rospy.Publisher("bounding_box", BoundingBoxArray, queue_size=1)
+    fake_image_pub = rospy.Publisher("fake_image", Image, queue_size=1)
 
     rospy.spin()
